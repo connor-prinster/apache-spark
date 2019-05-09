@@ -1,7 +1,11 @@
 package org.familysearch.spark.java;
 
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.familysearch.spark.java.models.FileLine;
 import org.familysearch.spark.java.util.SparkUtil;
+import scala.Tuple2;
 
 import java.io.IOException;
 
@@ -88,6 +92,44 @@ public class WordsUniqueToTwoBooks {
    * @param output result output directory
    */
   private static void run(final JavaSparkContext sc, final String input, final String output) {
-    // todo write code here
+    sc.textFile(input)
+            // map the data to a pair based on the word and the book it's found int
+            .mapToPair(line -> {
+              // split the line into word and book tuple
+              String[] split = line.split("\t");
+              return new Tuple2<>(split[0], split[1]);
+            })
+            // remove all distinct words
+            .distinct()
+            // group the words
+            .groupByKey()
+            // arrange alphabetically (a - z)
+            .sortByKey(true)
+            // map the stuff to a tuple with the word and the
+            // number of books it appears in
+            .map(tuple -> {
+              // to be filled
+              long count = 0L;
+              // so it's initialized. It'll throw a warning if I do not
+              String origWord = "";
+              // for the number of words in the iterable list of books
+              // increment the counter by one
+              for(String word : tuple._2()) {
+                origWord = tuple._1();
+                count++;
+              }
+              // return a Tuple based on the word and the number of
+              // books it appears in
+              return new Tuple2<String, Long>(origWord, count);
+            })
+            // filter if the number of books the word appears in is
+            // EXACTLY two
+            .filter(tuple -> (tuple._2() == 2))
+            // map the tuple into a single mapped string
+            .map(tuple -> tuple._1() + "\t" + tuple._2())
+            // coalesce into one
+            .coalesce(1)
+            // save the output to 'output' as a text file
+            .saveAsTextFile(output);
   }
 }

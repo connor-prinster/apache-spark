@@ -1,9 +1,14 @@
 package org.familysearch.spark.java;
 
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.familysearch.spark.java.util.SparkUtil;
+import scala.Tuple2;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Class created by dalehulse on 3/27/17.
@@ -77,6 +82,56 @@ public class BibleWordCount2 {
    * @param output result output directory
    */
   static void run(final JavaSparkContext sc, final String input, final String stopWordsIn, final String output) {
-    // todo write code here
+
+    // list of words to not include are here
+    List<String> stopWords = sc.textFile(stopWordsIn).collect();
+
+    // read in the text file
+    JavaRDD<String> cleanedUpBibleRdd = sc.textFile(input)
+            // split each line into a list of three words
+            .flatMap(s -> Arrays.asList(s.split(" ")).iterator())
+            // filter out words that are contained in the stopWords list
+            .filter(x -> !stopWords.contains(x))
+            // clean out the verse headers
+            .filter(word -> !isVerse(word))
+            // clean out lines that are only special characters
+            .filter(word -> !onlySpecialChars(word))
+            // clean out any special characters in a word
+            .map(word -> cleanHangingSpecialCharacters(word))
+            // map the remaining words into a tuple to count words
+            .mapToPair(word -> new Tuple2<>(word, 1))
+            // reduce the tuples by key
+            .reduceByKey((a, b) -> a + b)
+            // map the new data to pair to allow sorting
+            .mapToPair(tuple -> new Tuple2<>(tuple._2(), tuple._1()))
+            // sort the data
+            .sortByKey(false)
+            // push into a single text
+            .coalesce(1)
+            // map the tuple into a single string
+            .map(tuple -> tuple._2() + "\t" + tuple._1());
+
+    // save to the text file
+    cleanedUpBibleRdd.saveAsTextFile(output);
+  }
+
+  private static Boolean isVerse(String word) {
+    String verses = "[0-9]*:[0-9]*";
+    return word.matches(verses);
+  }
+
+  private static Boolean onlySpecialChars(String word) {
+    String notAlphaNumeric = "[^a-zA-Z]*";
+    return word.matches(notAlphaNumeric);
+  }
+
+  private static String cleanHangingSpecialCharacters(String word) {
+    String alphaNumeric = "^[a-zA-Z]*$";
+    String first = Character.toString(word.toCharArray()[0]);
+    String last = Character.toString(word.toCharArray()[word.length() - 1]);
+    if(!first.matches(alphaNumeric) || !last.matches(alphaNumeric)) {
+      word = word.replaceAll("[^a-zA-Z]*", "");
+    }
+    return word.toLowerCase();
   }
 }

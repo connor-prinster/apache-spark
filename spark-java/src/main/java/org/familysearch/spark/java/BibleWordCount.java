@@ -1,9 +1,18 @@
 package org.familysearch.spark.java;
 
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
+import org.apache.spark.broadcast.Broadcast;
 import org.familysearch.spark.java.util.SparkUtil;
+import scala.Array;
+import scala.Tuple2;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Class created by dalehulse on 3/15/17.
@@ -105,6 +114,33 @@ public class BibleWordCount {
    * @param output result output directory
    */
   private static void run(final JavaSparkContext sc, final String input, final String stopWordsIn, final String output) {
-    // todo write code here
+
+    //Broadcast variables
+    List<String> broadcast = sc.textFile(stopWordsIn).collect();
+
+    // create an RDD from the text file
+    JavaRDD<String> distFile = sc.textFile(input);
+
+
+    JavaRDD<String> bibleCountRDD = sc
+            // read in the text file
+            .textFile(input)
+            // filter out the stop words and map the remaining words to pairs
+            .filter(x -> !broadcast.contains(x)).mapToPair(s -> new Tuple2<>(s, 1))
+            // reduce all the pairs by key
+            .reduceByKey((a, b) -> a + b)
+            // map the tuples to a tupled pair
+            .mapToPair(s -> new Tuple2<>(s._2(), s._1()))
+            // sort the keys from largest to smallest to get a descending order
+            .sortByKey(false)
+            // coalesce into a single place
+            .coalesce(1)
+            // map the data into a single string
+            .map(key -> key._2() + "\t" + key._1());
+
+    // save the completely mapped rdd to a text file
+    bibleCountRDD.saveAsTextFile(output);
   }
 }
+
+

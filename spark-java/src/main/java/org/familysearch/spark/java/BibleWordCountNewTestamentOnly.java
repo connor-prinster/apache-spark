@@ -1,11 +1,18 @@
 package org.familysearch.spark.java;
 
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.AnalysisException;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.familysearch.spark.java.util.SparkUtil;
+import scala.Tuple2;
+
+import static org.apache.spark.sql.functions.*;
 
 import java.io.IOException;
+import java.util.Map;
 
 /**
  * Class created by dalehulse on 4/5/17.
@@ -115,6 +122,48 @@ public class BibleWordCountNewTestamentOnly {
    * @param output result output directory
    */
   private static void run(final SparkSession spark, final String input, final String output) throws AnalysisException {
-    // todo write code here
+    Dataset<Row> df = spark.read().parquet(input);
+    df.createTempView("bible");
+
+    // grab words from where column "testament" is equal to "new-testament"
+    Dataset<Row> wordsFromNT = df
+            .where(col("testament").equalTo("new-testament"));
+
+    // grab words from old testament
+    Map<String, Boolean> otWordMap = df
+            // get words from old-testament
+            .where(col("testament").equalTo("old-testament"))
+            // turn the dataset into a JavaRDD
+            .toJavaRDD()
+            // map the JavaRDD to JavaPairRDD with the word, true
+            .mapToPair(row -> new Tuple2<>(row.get(0).toString(), true))
+            // get the JavaPairRDD to a Map<>
+            .collectAsMap();
+
+    // group the column words -> count the number of times that word
+    // exists, and group is as "word_cnt"
+    Dataset<Row> wordsAndCountsFromNT = wordsFromNT
+            .groupBy(col("word"))
+            .agg(count("word"))
+            .as("word_cnt");
+
+    JavaRDD<String> pairRDD = wordsAndCountsFromNT
+            // to javardd
+            .toJavaRDD()
+            // push the row into a tuple with (number of times appeared, word) layout
+            .map(row -> new Tuple2<>(row.get(1).toString(), row.get(0).toString()))
+            // create a keyvalue pair with number of words as a rank
+            .mapToPair(tuple -> new Tuple2<>(Integer.parseInt(tuple._1()), tuple._2()))
+            // see if word is from OT as well.
+            .filter(tuple -> !otWordMap.containsKey(tuple._2()))
+            // sort descending
+            .sortByKey(false)
+            // layout the key-value pair
+            .map(s -> s._2() + "\t" + s._1())
+            // put into a single file
+            .coalesce(1);
+
+    // save the "word \t count" format to output
+    pairRDD.saveAsTextFile(output);
   }
 }

@@ -1,7 +1,9 @@
 package org.familysearch.spark.java;
 
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.*;
+import org.familysearch.spark.java.models.FileLine;
 import org.familysearch.spark.java.util.SparkUtil;
 
 import java.io.IOException;
@@ -57,6 +59,24 @@ public class CreateBibleDataFrameFromRawText {
    * @param output result output directory
    */
   private static void run(final JavaSparkContext sc, final SparkSession spark, final String input, final String output) {
-    // todo write code here
+    // create the rdd from the text file
+    JavaRDD<FileLine> filelineJavaRDD = spark
+            // set the program up to read
+            .read()
+            // grab data from text file
+            .textFile(input)
+            // push it to javardd
+            .javaRDD()
+            // map the line to a FileLine object
+            .map(line -> {
+              String[] split = line.split("\t");
+              return new FileLine(split[0], split[1], split[2]);
+            });
+
+    // create the DataFrame
+    Dataset<Row> filelineDF = spark.createDataFrame(filelineJavaRDD, FileLine.class);
+
+    // write the data to the parquet files
+    filelineDF.write().parquet(output);
   }
 }
