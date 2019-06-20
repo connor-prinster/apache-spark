@@ -116,7 +116,7 @@ public class BibleWordCount {
   private static void run(final JavaSparkContext sc, final String input, final String stopWordsIn, final String output) {
 
     //Broadcast variables
-    List<String> broadcast = sc.textFile(stopWordsIn).collect();
+    Broadcast<List<String>> broadcast = sc.broadcast(sc.textFile(stopWordsIn).collect());
 
     // create an RDD from the text file
     JavaRDD<String> distFile = sc.textFile(input);
@@ -126,7 +126,7 @@ public class BibleWordCount {
             // read in the text file
             .textFile(input)
             // filter out the stop words and map the remaining words to pairs
-            .filter(x -> !broadcast.contains(x)).mapToPair(s -> new Tuple2<>(s, 1))
+            .filter(x -> !broadcast.value().contains(x)).mapToPair(s -> new Tuple2<>(s, 1))
             // reduce all the pairs by key
             .reduceByKey((a, b) -> a + b)
             // map the tuples to a tupled pair

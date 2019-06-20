@@ -90,14 +90,15 @@ public class BibleWordCount2 {
     JavaRDD<String> cleanedUpBibleRdd = sc.textFile(input)
             // split each line into a list of three words
             .flatMap(s -> Arrays.asList(s.split(" ")).iterator())
-            // filter out words that are contained in the stopWords list
-            .filter(x -> !stopWords.contains(x))
+
             // clean out the verse headers
             .filter(word -> !isVerse(word))
             // clean out lines that are only special characters
             .filter(word -> !onlySpecialChars(word))
             // clean out any special characters in a word
             .map(word -> cleanHangingSpecialCharacters(word))
+            // filter out words that are contained in the stopWords list
+            .filter(x -> !stopWords.contains(x))
             // map the remaining words into a tuple to count words
             .mapToPair(word -> new Tuple2<>(word, 1))
             // reduce the tuples by key
